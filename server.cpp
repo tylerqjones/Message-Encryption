@@ -2,7 +2,11 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <cstring>
+#include <string>
 #include <unistd.h>
+
+// g++ server.cpp -o server
+// ./server
 
 int main() {
     // Creating the server socket
@@ -25,8 +29,22 @@ int main() {
 
     // Receive data from client
     char buffer[1024] = {0};
-    recv(clientSocket, buffer, sizeof(buffer), 0);
-    std::cout << "Message from client: " << buffer << std::endl;
+    while(true) {
+        recv(clientSocket, buffer, sizeof(buffer), 0);
+
+        if(strcmp(buffer, "exit") == 0) {
+            std::cout << "Client disconnected." << '\n';
+            break;
+        }
+
+        std::cout << "Message from client: " << buffer << std::endl;
+        
+        std::string receiveMessage = "Message received.";
+        send(clientSocket, receiveMessage.c_str(), receiveMessage.length(), 0);
+
+        memset(buffer, 0, sizeof(buffer));
+    }
+
 
     close(serverSocket);
 
