@@ -37,7 +37,7 @@ int main() {
 
         read(clientSocket, buffer, 1024);
         std::cout << buffer << '\n';
-        memset(buffer, 0 ,sizeof(buffer));
+        memset(buffer, 0, sizeof(buffer));
     }
 
     close(clientSocket);
