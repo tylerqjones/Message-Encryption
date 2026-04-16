@@ -52,6 +52,15 @@ int main() {
 
     // Accept client connection
     int clientSocket = accept(serverSocket, nullptr, nullptr);
+    if(clientSocket) {
+        std::cout << "Client connected.\n";
+    } else {
+        std::cerr << "Problem with client connecting.\n";
+        close(serverSocket);
+        return -4;
+    }
+
+    close(serverSocket);
 
     // Receive data from client
     char buffer[1024] = {0};
@@ -65,13 +74,13 @@ int main() {
 
         std::cout << "Message from client: " << buffer << std::endl;
         
-        std::string receiveMessage = "Message received.";
+        std::string receiveMessage = "Message received.\n";
         send(clientSocket, receiveMessage.c_str(), receiveMessage.length(), 0);
 
         memset(buffer, 0, sizeof(buffer));
     }
 
-    close(serverSocket);
+    close(clientSocket);
 
     return 0;
 }
