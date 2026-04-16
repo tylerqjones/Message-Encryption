@@ -13,6 +13,10 @@
 int main() {
     // Create client socket
     int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if(clientSocket == -1) {
+        std::cerr << "Failed to create socket.\n";
+        return -1;
+    }
 
     // Defining server address
     sockaddr_in serverAddress;
@@ -21,27 +25,24 @@ int main() {
     serverAddress.sin_addr.s_addr = INADDR_ANY;
 
     // Connect to server
-    connect(clientSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress));
-
-    // Accept a call
-    sockaddr_in client;
-    socklen_t clientSize = sizeof(client);
-    char host[NI_MAXHOST]; // Client's remote name
-    char svc[NI_MAXSERV]; // Service (port) the client is connect on
-
-    memset(host, 0, NI_MAXHOST); // NI_MAXHOST = max size of host name <netdb.h>
-    memset(svc, 0, NI_MAXSERV); // NI_MAXSERV = max size of service name <netdb.h>
-
-    int result = getnameinfo((sockaddr*)&client, sizeof(client), host, NI_MAXHOST, svc, NI_MAXSERV, 0);
-    if(result) {
-        std::cout << host << " connected on port " << svc << '\n';
-    } else {
-        inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST); // Converts the IP address from binary to text. Network to presentation.
-        std::cout << host << " connected on port " << ntohs(client.sin_port) << '\n'; // Network to host short
+    if(connect(clientSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == -1) {
+        std::cerr << "Failed to connect to server.\n";
+        close(clientSocket);
+        return -2;
     }
 
+    std::cout << "Connected to server.\n";
+
+    std::string username;
+    std::cout << "Enter your username: ";
+    std::getline(std::cin, username);
+
+    send(clientSocket, username.c_str(), username.length(), 0);
+
+    std::cout << "Logged in as " << username << '\n';
+    
     // Send data to the server
-    char buffer[1024] = {0};
+    char buffer[4096];
     std::string message;
 
     while(true) {
@@ -54,9 +55,11 @@ int main() {
             break;
         }
 
-        read(clientSocket, buffer, 1024);
-        std::cout << buffer << '\n';
-        memset(buffer, 0, sizeof(buffer));
+        memset(buffer, 0, 4096);
+        int bytesReceived = recv(clientSocket, buffer, 4096, 0);
+        if (bytesReceived > 0) {
+            std::cout << "Server: " << std::string(buffer, 0, bytesReceived) << '\n';
+        }
     }
 
     close(clientSocket);

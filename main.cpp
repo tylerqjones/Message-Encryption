@@ -52,7 +52,6 @@ int main() {
     }
 
     // Close the listening socket
-
     close(serverSocket);
 
     memset(host, 0, NI_MAXHOST); // NI_MAXHOST = max size of host name <netdb.h>
