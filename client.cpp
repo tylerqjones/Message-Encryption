@@ -6,9 +6,45 @@
 #include <cstring>
 #include <string>
 #include <netdb.h>
+#include <thread>
+#include <mutex>
 
 // g++ client.cpp -o client
 // ./client
+
+// Choose user to message
+// Listener thread
+// Function for output called with execpv. Mutual exclusion
+
+// Client sends encrypted message to server
+// Server sends encrypted message to other client
+// Each client has a public key and private key
+// RSA encryption algorithm
+
+const int PORT = 8080;
+const char* SERVER_IP = "127.0.0.1";
+
+std::mutex clientMutex;
+
+// Listener thread
+void receiveMessages(int socket) {
+    char buffer[4096];
+    while(true) {
+        memset(buffer, 0, 4096);
+        int bytesReceived = recv(socket, buffer, 4096, 0);
+        
+        if (bytesReceived <= 0) {
+            std::cout << "\n[Disconnected from server]\n";
+            exit(0);
+        }
+
+        std::string receivedData = std::string(buffer, 0, bytesReceived);
+        
+        clientMutex.lock();
+        std::cout << receivedData;
+        clientMutex.unlock();
+    }
+}
 
 int main() {
     // Create client socket
@@ -21,8 +57,9 @@ int main() {
     // Defining server address
     sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(8080);
-    serverAddress.sin_addr.s_addr = INADDR_ANY;
+    serverAddress.sin_port = htons(PORT);
+    // serverAddress.sin_addr.s_addr = INADDR_ANY;
+    inet_pton(AF_INET, SERVER_IP, &serverAddress.sin_addr);
 
     // Connect to server
     if(connect(clientSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == -1) {
@@ -34,32 +71,34 @@ int main() {
     std::cout << "Connected to server.\n";
 
     std::string username;
-    std::cout << "Enter your username: ";
-    std::getline(std::cin, username);
+    do {
+        std::cout << "Enter your username: ";
+        std::getline(std::cin, username);
+    } while(username.empty());
 
     send(clientSocket, username.c_str(), username.length(), 0);
-
     std::cout << "Logged in as " << username << '\n';
+
+    std::thread listener(receiveMessages, clientSocket);
+    listener.detach();
     
     // Send data to the server
-    char buffer[4096];
     std::string message;
-
     while(true) {
-        std::cout << "Enter message (\"exit\" to close): ";
+
         std::getline(std::cin, message);
 
-        send(clientSocket, message.c_str(), message.length(), 0);
+        if(message.empty()) {
+            continue;
+        }
 
-        if(message == "exit") {
+        if(message == "/exit") {
             break;
         }
 
-        memset(buffer, 0, 4096);
-        int bytesReceived = recv(clientSocket, buffer, 4096, 0);
-        if (bytesReceived > 0) {
-            std::cout << "Server: " << std::string(buffer, 0, bytesReceived) << '\n';
-        }
+        clientMutex.lock();
+        send(clientSocket, message.c_str(), message.length(), 0);
+        clientMutex.unlock();
     }
 
     close(clientSocket);
