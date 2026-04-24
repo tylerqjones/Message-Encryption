@@ -84,8 +84,8 @@ int generateRandomPrime(int min, int max) {
 
 // RSA Key Generation
 void generateKeys(long long &publicExponent, long long &privateExponent, long long &modulus) {
-    long long p = generateRandomPrime(10000, 100000);
-    long long q = generateRandomPrime(10000, 100000);
+    long long p = generateRandomPrime(1000, 10000);
+    long long q = generateRandomPrime(1000, 10000);
     
     modulus = p * q;
     long long phi = (p - 1) * (q - 1);
@@ -125,19 +125,26 @@ void receiveMessages(int socket) {
 
         std::string receivedData(buffer, 0, bytesReceived);
 
-        // Assigns the targetr's key
-        if(receivedData.find("[KEY]") == 0) {
-            int spaceAfterUsername = receivedData.find(' ', 6); // Substr after [KEY]
+        // Assigns the target's key
+        int keyPos = receivedData.find("[KEY]");
+        if(keyPos != -1) {
+            int spaceAfterKey = receivedData.find(' ', keyPos);
+            int spaceAfterUsername = receivedData.find(' ', spaceAfterKey + 1); // Substr after [KEY]
             int spaceAfterExponent = receivedData.find(' ', spaceAfterUsername + 1);
             
+            std::lock_guard<std::mutex> lock(clientMutex);
             clientInfo.targetPublicExponent = std::stoll(receivedData.substr(spaceAfterUsername + 1, spaceAfterExponent - spaceAfterUsername - 1));
             clientInfo.targetModulus = std::stoll(receivedData.substr(spaceAfterExponent + 1));
             clientInfo.isEncrypted = true;
+
+            std::cout << receivedData;
             continue;
         }
 
         // For when ending encryption
-        if(receivedData.find("[STOPKEY]") == 0) {
+        if(receivedData.find("[STOPKEY]") != -1) {
+            std::lock_guard<std::mutex> lock(clientMutex);
+            std::cout << receivedData;
             clientInfo.isEncrypted = false;
             continue;
         }
@@ -148,17 +155,17 @@ void receiveMessages(int socket) {
             std::string decryptedMessage = "";
             std::string encryptedMessage = receivedData.substr(encryptionPos + 12); // Substr after [ENCRYPTED]
 
-            int start = 0;
-            while(start < encryptedMessage.length()) {
-                int end = encryptedMessage.find(' ', start);
+            int startMsg = 0;
+            while(startMsg < encryptedMessage.length()) {
+                int endMsg = encryptedMessage.find(' ', startMsg);
                 std::string encryptedChar;
 
-                if(end == -1) {
-                    encryptedChar = encryptedMessage.substr(start);
-                    start = encryptedMessage.length();
+                if(endMsg == -1) {
+                    encryptedChar = encryptedMessage.substr(startMsg);
+                    startMsg = encryptedMessage.length();
                 } else {
-                    encryptedChar = encryptedMessage.substr(start, end - start);
-                    start = end + 1;
+                    encryptedChar = encryptedMessage.substr(startMsg, endMsg - startMsg);
+                    startMsg = endMsg + 1;
                 }
 
                 if(!encryptedChar.empty() && encryptedChar != "\n") {
@@ -166,13 +173,11 @@ void receiveMessages(int socket) {
                 }
             }
 
-            clientMutex.lock();
+            std::lock_guard<std::mutex> lock(clientMutex);
             std::cout << receivedData.substr(0, encryptionPos) << decryptedMessage << "\n";
-            clientMutex.unlock();
         } else {
-            clientMutex.lock();
+            std::lock_guard<std::mutex> lock(clientMutex);
             std::cout << receivedData;
-            clientMutex.unlock();
         }
     }
 }
@@ -211,9 +216,12 @@ int main() {
         std::getline(std::cin, username);
     } while(username.empty());
 
+    {
+    std::lock_guard<std::mutex> lock(clientMutex);
     std::string loginInfo = username + " " + std::to_string(clientInfo.clientPublicExponent) + " " + std::to_string(clientInfo.clientModulus);
     send(clientSocket, loginInfo.c_str(), loginInfo.length(), 0);
     std::cout << "Logged in as " << username << '\n';
+    }
 
     std::thread listener(receiveMessages, clientSocket);
     listener.detach();
@@ -231,7 +239,7 @@ int main() {
             break;
         }
 
-        clientMutex.lock();
+        std::lock_guard<std::mutex> lock(clientMutex);
 
         // Encrypts true ans long as not command.
         if(clientInfo.isEncrypted && message[0] != '/') {
@@ -247,7 +255,6 @@ int main() {
                 clientInfo.isEncrypted = false;
             }
         }
-        clientMutex.unlock();
     }
     close(clientSocket);
 

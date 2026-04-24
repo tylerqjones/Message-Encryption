@@ -41,7 +41,7 @@ void sendMessage(int socket, const std::string& msg) {
 
 void displayUsers(int socket) {
     std::string userList = "[SERVER] Online users: ";
-    serverMutex.lock();
+    std::lock_guard<std::mutex> lock(serverMutex);
     for(int i = 0; i < activeClients.size(); i++) {
         userList += activeClients[i].username;
         if(i != activeClients.size() - 1) {
@@ -49,7 +49,6 @@ void displayUsers(int socket) {
         }
     }
     sendMessage(socket, userList + '\n');
-    serverMutex.unlock();
 }
 
 // Handles individual client connections
@@ -77,20 +76,23 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
     long long clientModulus = std::stoll(loginData.substr(secondSpace + 1));
 
     // Check if username already exists
-    serverMutex.lock();
-    for(int i = 0; i < activeClients.size(); i++) {
-        if(activeClients[i].username == username) {
-            sendMessage(clientSocket, "[SERVER] Username already taken.\n");
-            serverMutex.unlock();
-            close(clientSocket);
-            return;
+    {
+        std::lock_guard<std::mutex> lock(serverMutex);
+        for(int i = 0; i < activeClients.size(); i++) {
+            if(activeClients[i].username == username) {
+                sendMessage(clientSocket, "[SERVER] Username already taken.\n");
+                close(clientSocket);
+                return;
+            }
         }
-    }
     activeClients.push_back({username, clientSocket, clientPublicExponent, clientModulus});
-    serverMutex.unlock();
+    }
 
+    {
+    std::lock_guard<std::mutex> lock(serverMutex);
     std::cout << "[SERVER] " << host << " joined as " << username << ".\n";
     sendMessage(clientSocket, "[SERVER] Type '/list' to see user list. Type '/msg <username>' to message a user. Type '/stopmsg' to stop messaging user. Type '/exit' to exit.\n");
+    }
     
     std::string targetUser = ""; // Target user to message
 
@@ -115,16 +117,17 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
             bool found = false;
             long long targetPublicExponent, targetModulus;
 
-            serverMutex.lock();
-            for(int i = 0; i < activeClients.size(); i++) {
-                if(activeClients[i].username == targetUser) {
-                    found = true;
-                    targetPublicExponent = activeClients[i].publicExponent;
-                    targetModulus = activeClients[i].modulus;
-                    break;
+            {
+                std::lock_guard<std::mutex> lock(serverMutex);
+                for(int i = 0; i < activeClients.size(); i++) {
+                    if(activeClients[i].username == targetUser) {
+                        found = true;
+                        targetPublicExponent = activeClients[i].publicExponent;
+                        targetModulus = activeClients[i].modulus;
+                        break;
+                    }
                 }
             }
-            serverMutex.unlock();
 
             if(!found) {
                 sendMessage(clientSocket, "[SERVER] " + targetUser + " not found.\n");
@@ -150,11 +153,14 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
             continue;
         }
 
+        {
+        std::lock_guard<std::mutex> lock(serverMutex);
         std::cout << "[" << host << "] " << username << " to " << targetUser << ": " << receivedData << '\n';
+        }
 
         // Sending a direct message
         bool found = false;
-        serverMutex.lock();
+        std::lock_guard<std::mutex> lock(serverMutex);
         for(int i = 0; i < activeClients.size(); i++) {
             if(activeClients[i].username == targetUser) {
                 std::string directMsg = username + ": " + receivedData + "\n";
@@ -167,18 +173,18 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
             sendMessage(clientSocket, "[SERVER] " + targetUser + " not found.");
             targetUser = "";
         }
-        serverMutex.unlock();
     }
 
     // Remove from active clients once disconnected
-    serverMutex.lock();
-    for(int i = 0; i < activeClients.size(); i++) {
-        if(activeClients[i].socket == clientSocket) {
-            activeClients.erase(activeClients.begin() + i);
-            break; 
+    {
+        std::lock_guard<std::mutex> lock(serverMutex);
+        for(int i = 0; i < activeClients.size(); i++) {
+            if(activeClients[i].socket == clientSocket) {
+                activeClients.erase(activeClients.begin() + i);
+                break; 
+            }
         }
     }
-    serverMutex.unlock();
 
     close(clientSocket);
 }
