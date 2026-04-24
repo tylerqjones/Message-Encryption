@@ -17,6 +17,7 @@
 #include <thread>
 #include <vector>
 #include <mutex>
+#include <bits/stdc++.h>
 
 // g++ server.cpp -o server -pthread
 // ./server
@@ -26,6 +27,8 @@ const int PORT = 8080;
 struct ClientInfo {
     std::string username;
     int socket;
+    long long publicExponent;
+    long long modulus;
 };
 
 std::vector<ClientInfo> activeClients;
@@ -39,7 +42,7 @@ void sendMessage(int socket, const std::string& msg) {
 void displayUsers(int socket) {
     std::string userList = "[SERVER] Online users: ";
     serverMutex.lock();
-    for (int i = 0; i < activeClients.size(); i++) {
+    for(int i = 0; i < activeClients.size(); i++) {
         userList += activeClients[i].username;
         if(i != activeClients.size() - 1) {
         userList += ", ";
@@ -64,11 +67,18 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
         close(clientSocket);
         return;
     }
-    std::string username = std::string(buffer, 0, bytesForName);
+    std::string loginData(buffer, 0, bytesForName);
+
+    int firstSpace = loginData.find(' ');
+    int secondSpace = loginData.find(' ', firstSpace + 1);
+
+    std::string username = loginData.substr(0, firstSpace);
+    long long clientPublicExponent = std::stoll(loginData.substr(firstSpace + 1, secondSpace - firstSpace - 1)); // string to long long
+    long long clientModulus = std::stoll(loginData.substr(secondSpace + 1));
 
     // Check if username already exists
     serverMutex.lock();
-    for (int i = 0; i < activeClients.size(); i++) {
+    for(int i = 0; i < activeClients.size(); i++) {
         if(activeClients[i].username == username) {
             sendMessage(clientSocket, "[SERVER] Username already taken.\n");
             serverMutex.unlock();
@@ -76,7 +86,7 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
             return;
         }
     }
-    activeClients.push_back({username, clientSocket});
+    activeClients.push_back({username, clientSocket, clientPublicExponent, clientModulus});
     serverMutex.unlock();
 
     std::cout << "[SERVER] " << host << " joined as " << username << ".\n";
@@ -99,14 +109,18 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
         if(receivedData == "/list") {
             displayUsers(clientSocket);
             continue;
-        } else if (receivedData.rfind("/msg ", 0) == 0) {
+        } else if(receivedData.find("/msg ") == 0) {
             targetUser = receivedData.substr(5);
 
             bool found = false;
+            long long targetPublicExponent, targetModulus;
+
             serverMutex.lock();
             for(int i = 0; i < activeClients.size(); i++) {
-                if (activeClients[i].username == targetUser) {
+                if(activeClients[i].username == targetUser) {
                     found = true;
+                    targetPublicExponent = activeClients[i].publicExponent;
+                    targetModulus = activeClients[i].modulus;
                     break;
                 }
             }
@@ -114,19 +128,25 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
 
             if(!found) {
                 sendMessage(clientSocket, "[SERVER] " + targetUser + " not found.\n");
+                targetUser = "";
                 continue;
             }
 
             sendMessage(clientSocket, "[SERVER] Now messaging " + targetUser + ".\n");
+
+            std::string keyCommand = "[KEY] " + targetUser + " " + std::to_string(targetPublicExponent) + " " + std::to_string(targetModulus) + "\n";
+            sendMessage(clientSocket, keyCommand);
             continue;
-        } else if (receivedData == "/stopmsg") {
+
+        } else if(receivedData.find("/stopmsg") == 0) {
+            sendMessage(clientSocket, "[STOPKEY]\n");
             sendMessage(clientSocket, "[SERVER] No longer messaging " + targetUser + ".\n");
             targetUser = "";
             continue;
         }
 
         if(targetUser.empty()) {
-            sendMessage(clientSocket, "[SERVER] You are not messaging anyone. Use /msg <username>.\n");
+            sendMessage(clientSocket, "[SERVER] Use /msg <username> to message.\n");
             continue;
         }
 
@@ -136,7 +156,7 @@ void handleClient(int clientSocket, sockaddr_in clientAddr) {
         bool found = false;
         serverMutex.lock();
         for(int i = 0; i < activeClients.size(); i++) {
-            if (activeClients[i].username == targetUser) {
+            if(activeClients[i].username == targetUser) {
                 std::string directMsg = username + ": " + receivedData + "\n";
                 sendMessage(activeClients[i].socket, directMsg);
                 found = true;
@@ -195,7 +215,7 @@ int main() {
 
     std::cout << "Server started on port " << PORT << ".\n";
 
-    while (true) {
+    while(true) {
         sockaddr_in clientAddr;
         socklen_t clientSize = sizeof(clientAddr);
 
@@ -206,7 +226,6 @@ int main() {
             newClient.detach();
         }
     }
-
     close(serverSocket);
 
     return 0;
